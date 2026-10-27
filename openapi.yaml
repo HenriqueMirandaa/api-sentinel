@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: API Sentinel
+  version: 0.1.0
+  description: API monitoring service.
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy.
+  /api/auth/register:
+    post:
+      summary: Register a user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        "201": { description: User created }
+  /api/auth/login:
+    post:
+      summary: Login
+      responses:
+        "200": { description: Token returned }
+  /api/monitors:
+    get:
+      summary: List authenticated user's monitors
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Monitor list }
+    post:
+      summary: Create a monitor
+      security: [{ bearerAuth: [] }]
+      responses:
+        "201": { description: Monitor created }
+  /api/incidents:
+    get:
+      summary: List incidents
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Incident list }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel
+      POSTGRES_DB: api_sentinel
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    environment:
+      DATABASE_URL: postgresql://sentinel:sentinel@postgres:5432/api_sentinel
+      JWT_SECRET: local-development-secret-change-me
+      WEB_ORIGIN: http://localhost:5173
+    depends_on:
+      - postgres
+    ports:
+      - "3001:3001"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: worker
+    environment:
+      DATABASE_URL: postgresql://sentinel:sentinel@postgres:5432/api_sentinel
+      CHECK_INTERVAL_MS: 60000
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
