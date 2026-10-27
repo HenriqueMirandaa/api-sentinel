@@ -125,6 +125,7 @@ function App() {
 
         <div className="simulation-banner"><Terminal size={16} /><span><strong>Simulation mode</strong> — sample data only. No external requests are sent.</span><button type="button" onClick={() => setShowLogin(true)}>View real setup <ArrowUpRight size={14} /></button></div>
 
+        <div className={activePage === "Overview" ? "" : "hidden-page"}>
         <section className="hero-grid">
           <article className="health-panel panel">
             <div className="panel-topline"><span className="kicker">SYSTEM HEALTH</span><span className="status-tag success"><span className="status-dot" /> 87.5% operational</span></div>
@@ -160,9 +161,45 @@ function App() {
         </section>
 
         <footer className="page-footer"><span>API Sentinel <span className="footer-muted">· Public simulation</span></span><span>Built for backend observability <Activity size={13} /></span></footer>
+        </div>
+        {activePage !== "Overview" ? <WorkspacePage page={activePage} monitors={monitors} incidents={incidentActive} /> : null}
       </main>
     </div>
   );
+}
+
+function WorkspacePage({ page, monitors, incidents }: { page: string; monitors: Monitor[]; incidents: boolean }) {
+  if (page === "Monitors") {
+    return (
+      <section className="workspace-page">
+        <div className="workspace-page-heading"><div><span className="kicker">MONITOR REGISTRY</span><h2>All monitors</h2><p>Every endpoint currently tracked by this workspace.</p></div><button className="primary-button" type="button"><Plus size={16} /> Add monitor</button></div>
+        <div className="full-monitor-list">{monitors.map((monitor) => <div className="full-monitor-row" key={monitor.name}><div className={`service-signal ${monitor.state.toLowerCase()}`} /><div className="full-monitor-name"><strong>{monitor.name}</strong><small>{monitor.url}</small></div><Status state={monitor.state} /><span className="table-mono">{monitor.latency}</span><span className="table-mono">{monitor.uptime} uptime</span><button className="outline-button" type="button">View details <ArrowUpRight size={14} /></button></div>)}</div>
+      </section>
+    );
+  }
+
+  if (page === "Incidents") {
+    return (
+      <section className="workspace-page">
+        <div className="workspace-page-heading"><div><span className="kicker">OPERATIONS LOG</span><h2>Incidents</h2><p>Review failures, notifications and service recovery events.</p></div><span className={`status-tag ${incidents ? "warning" : "success"}`}><span className="status-dot" />{incidents ? "1 active incident" : "All clear"}</span></div>
+        <div className="incident-log"><LogRow tone="danger" time="12:21:04" title="Checkout service is down" detail="3 consecutive failures · timeout after 10s" status="OPEN" /><LogRow tone="warning" time="12:20:47" title="Latency threshold exceeded" detail="812 ms response · threshold is 500 ms" status="DETECTED" /><LogRow tone="neutral" time="11:00:00" title="Scheduled check completed" detail="8 monitors checked successfully" status="RESOLVED" /></div>
+      </section>
+    );
+  }
+
+  if (page === "Activity log") {
+    return <section className="workspace-page"><div className="workspace-page-heading"><div><span className="kicker">AUDIT TRAIL</span><h2>Activity log</h2><p>A chronological record of monitoring activity.</p></div></div><div className="incident-log"><LogRow tone="neutral" time="12:21:04" title="Check failed" detail="checkout.example.dev/health returned a timeout" status="CHECK" /><LogRow tone="neutral" time="12:20:47" title="Check completed" detail="api.example.dev/health responded in 142 ms" status="CHECK" /><LogRow tone="neutral" time="12:00:00" title="Workspace opened" detail="Public simulation session started" status="SYSTEM" /></div></section>;
+  }
+
+  return <section className="workspace-page settings-page"><div className="workspace-page-heading"><div><span className="kicker">WORKSPACE CONFIGURATION</span><h2>Settings</h2><p>Configuration preview for the real API Sentinel workspace.</p></div></div><div className="settings-grid"><Setting label="Check interval" value="Every 5 minutes" /><Setting label="Incident threshold" value="3 consecutive failures" /><Setting label="Notification channel" value="SMTP email" /><Setting label="Workspace mode" value="Public simulation" /></div></section>;
+}
+
+function LogRow({ tone, time, title, detail, status }: { tone: string; time: string; title: string; detail: string; status: string }) {
+  return <div className="log-row"><span className={`log-marker ${tone}`} /><span className="log-time">{time}</span><div><strong>{title}</strong><small>{detail}</small></div><b className={`log-status ${tone}`}>{status}</b></div>;
+}
+
+function Setting({ label, value }: { label: string; value: string }) {
+  return <div className="setting-row"><span>{label}</span><strong>{value}</strong><ChevronRight size={15} /></div>;
 }
 
 function NavItem({ icon, label, active, count, open, onClick }: { icon: React.ReactNode; label: string; active?: boolean; count?: number; open: boolean; onClick: () => void }) {
