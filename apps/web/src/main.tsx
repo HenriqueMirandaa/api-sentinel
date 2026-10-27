@@ -1,5 +1,5 @@
-import { StrictMode, useState } from "react";
-import { createRoot } from "react-dom/client";
+import React, { StrictMode, useState } from "react";
+import * as ReactDOMClient from "react-dom/client";
 import "./styles.css";
 
 function App() {
@@ -58,7 +58,7 @@ function Monitor({ name, url, status, response, degraded }: { name: string; url:
   return <div className="monitor-row"><div className={`status-dot ${degraded ? "degraded" : ""}`} /><div className="monitor-name"><strong>{name}</strong><span>{url}</span></div><span className={`status ${degraded ? "status-warn" : ""}`}>{status}</span><span className="response">{response}</span><button className="row-button" type="button">View</button></div>;
 }
 
-createRoot(document.getElementById("root")!).render(
+ReactDOMClient.createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />
   </StrictMode>,
