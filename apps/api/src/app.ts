@@ -6,6 +6,7 @@ import { z } from "zod";
 import { pool } from "./config/database";
 import { env } from "./config/env";
 import { requireAuth } from "./middleware/auth";
+import { errorHandler } from "./middleware/error-handler";
 
 export const app = express();
 
@@ -14,6 +15,15 @@ app.use(express.json());
 
 app.get("/health", (_request, response) => {
   response.json({ status: "ok" });
+});
+
+app.get("/ready", async (_request, response, next) => {
+  try {
+    await pool.query("SELECT 1");
+    response.json({ status: "ready" });
+  } catch (error) {
+    next(error);
+  }
 });
 
 const credentials = z.object({ email: z.string().email(), password: z.string().min(8) });
@@ -112,9 +122,4 @@ app.get("/api/incidents", requireAuth, async (request, response, next) => {
   } catch (error) { next(error); }
 });
 
-app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
-  console.error(error);
-  if (error instanceof z.ZodError) return response.status(400).json({ error: "Invalid request", details: error.flatten() });
-  if ((error as { code?: string }).code === "23505") return response.status(409).json({ error: "Email already registered" });
-  response.status(500).json({ error: "Internal server error" });
-});
+app.use(errorHandler);

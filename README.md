@@ -76,7 +76,22 @@ npm run dev:worker
 npm run dev:web
 ```
 
-The API is available at `http://localhost:3001/health` and the public dashboard at the Vite URL. The real API requires registration through `POST /api/auth/register`, then a Bearer token for monitor endpoints.
+The API is available at `http://localhost:3001/health`; use `GET /ready` to verify PostgreSQL connectivity. Authenticate with `POST /api/auth/register` and send the returned token as `Authorization: Bearer YOUR_TOKEN`.
+
+### Try the API with curl
+
+```bash
+curl http://localhost:3001/health
+
+curl -X POST http://localhost:3001/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"you@example.com","password":"change-me-123"}'
+
+curl -X POST http://localhost:3001/api/monitors \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Example API","url":"https://example.com","expectedStatus":200}'
+```
 
 ## API
 
@@ -89,6 +104,8 @@ The initial contract is documented in [`openapi.yaml`](./openapi.yaml). Implemen
 - `DELETE /api/monitors/:id`
 - `GET /api/monitors/:id/checks`
 - `GET /api/incidents`
+
+Import [`openapi.yaml`](./openapi.yaml) into Swagger UI, Postman or Insomnia for the complete contract.
 
 ## Docker
 
