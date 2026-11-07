@@ -26,7 +26,10 @@ app.get("/ready", async (_request, response, next) => {
   }
 });
 
-const credentials = z.object({ email: z.string().email(), password: z.string().min(8) });
+const credentials = z.object({
+  email: z.string().email(),
+  password: z.string().min(8),
+});
 const monitorInput = z.object({
   name: z.string().min(1).max(100),
   url: z.string().url(),
@@ -34,14 +37,40 @@ const monitorInput = z.object({
   expectedStatus: z.number().int().min(100).max(599).default(200),
   timeoutMs: z.number().int().min(1000).max(30000).default(10000),
 });
+const paginationInput = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const monitorQuery = paginationInput.extend({
+  search: z.string().trim().max(100).optional(),
+  status: z.enum(["up", "down"]).optional(),
+});
+const incidentQuery = paginationInput.extend({
+  status: z.enum(["all", "open", "recovered"]).default("all"),
+});
 
-function hashPassword(password: string, salt = randomBytes(16).toString("hex")) {
+function pagination(page: number, limit: number, total: number) {
+  return {
+    page,
+    limit,
+    total,
+    totalPages: Math.ceil(total / limit),
+  };
+}
+
+function hashPassword(
+  password: string,
+  salt = randomBytes(16).toString("hex"),
+) {
   return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
 
 function verifyPassword(password: string, stored: string) {
   const [salt, hash] = stored.split(":");
-  return timingSafeEqual(scryptSync(password, salt, 64), Buffer.from(hash, "hex"));
+  return timingSafeEqual(
+    scryptSync(password, salt, 64),
+    Buffer.from(hash, "hex"),
+  );
 }
 
 app.post("/api/auth/register", async (request, response, next) => {
@@ -51,7 +80,9 @@ app.post("/api/auth/register", async (request, response, next) => {
       "INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email",
       [email.toLowerCase(), hashPassword(password)],
     );
-    const token = jwt.sign({ userId: result.rows[0].id }, env.jwtSecret, { expiresIn: "7d" });
+    const token = jwt.sign({ userId: result.rows[0].id }, env.jwtSecret, {
+      expiresIn: "7d",
+    });
     response.status(201).json({ user: result.rows[0], token });
   } catch (error) {
     next(error);
@@ -61,10 +92,17 @@ app.post("/api/auth/register", async (request, response, next) => {
 app.post("/api/auth/login", async (request, response, next) => {
   try {
     const { email, password } = credentials.parse(request.body);
-    const result = await pool.query("SELECT id, email, password_hash FROM users WHERE email = $1", [email.toLowerCase()]);
+    const result = await pool.query(
+      "SELECT id, email, password_hash FROM users WHERE email = $1",
+      [email.toLowerCase()],
+    );
     const user = result.rows[0];
-    if (!user || !verifyPassword(password, user.password_hash)) return response.status(401).json({ error: "Invalid credentials" });
-    response.json({ user: { id: user.id, email: user.email }, token: jwt.sign({ userId: user.id }, env.jwtSecret, { expiresIn: "7d" }) });
+    if (!user || !verifyPassword(password, user.password_hash))
+      return response.status(401).json({ error: "Invalid credentials" });
+    response.json({
+      user: { id: user.id, email: user.email },
+      token: jwt.sign({ userId: user.id }, env.jwtSecret, { expiresIn: "7d" }),
+    });
   } catch (error) {
     next(error);
   }
@@ -72,14 +110,43 @@ app.post("/api/auth/login", async (request, response, next) => {
 
 app.get("/api/monitors", requireAuth, async (request, response, next) => {
   try {
-    const result = await pool.query(
-      `SELECT m.*, COALESCE(c.ok, true) AS last_ok, c.checked_at AS last_checked_at
+    const { page, limit, search, status } = monitorQuery.parse(request.query);
+    const offset = (page - 1) * limit;
+    const values = [
+      request.userId,
+      search ? `%${search}%` : null,
+      status ?? null,
+      limit,
+      offset,
+    ];
+    const [result, count] = await Promise.all([
+      pool.query(
+        `SELECT m.*, COALESCE(c.ok, true) AS last_ok, c.checked_at AS last_checked_at
        FROM monitors m LEFT JOIN LATERAL (SELECT ok, checked_at FROM checks WHERE monitor_id = m.id ORDER BY checked_at DESC LIMIT 1) c ON true
-       WHERE m.user_id = $1 ORDER BY m.created_at DESC`,
-      [request.userId],
-    );
-    response.json(result.rows);
-  } catch (error) { next(error); }
+       WHERE m.user_id = $1
+         AND ($2::text IS NULL OR m.name ILIKE $2 OR m.url ILIKE $2)
+         AND ($3::text IS NULL OR COALESCE(c.ok, true) = ($3 = 'up'))
+       ORDER BY m.created_at DESC
+       LIMIT $4 OFFSET $5`,
+        values,
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS total
+         FROM monitors m
+         LEFT JOIN LATERAL (SELECT ok FROM checks WHERE monitor_id = m.id ORDER BY checked_at DESC LIMIT 1) c ON true
+         WHERE m.user_id = $1
+           AND ($2::text IS NULL OR m.name ILIKE $2 OR m.url ILIKE $2)
+           AND ($3::text IS NULL OR COALESCE(c.ok, true) = ($3 = 'up'))`,
+        values.slice(0, 3),
+      ),
+    ]);
+    response.json({
+      data: result.rows,
+      pagination: pagination(page, limit, count.rows[0].total),
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post("/api/monitors", requireAuth, async (request, response, next) => {
@@ -88,38 +155,101 @@ app.post("/api/monitors", requireAuth, async (request, response, next) => {
     const result = await pool.query(
       `INSERT INTO monitors (user_id, name, url, interval_seconds, expected_status, timeout_ms, next_check_at)
        VALUES ($1, $2, $3, $4, $5, $6, now()) RETURNING *`,
-      [request.userId, input.name, input.url, input.intervalSeconds, input.expectedStatus, input.timeoutMs],
+      [
+        request.userId,
+        input.name,
+        input.url,
+        input.intervalSeconds,
+        input.expectedStatus,
+        input.timeoutMs,
+      ],
     );
     response.status(201).json(result.rows[0]);
-  } catch (error) { next(error); }
+  } catch (error) {
+    next(error);
+  }
 });
 
-app.delete("/api/monitors/:id", requireAuth, async (request, response, next) => {
-  try {
-    const result = await pool.query("DELETE FROM monitors WHERE id = $1 AND user_id = $2 RETURNING id", [request.params.id, request.userId]);
-    if (!result.rowCount) return response.status(404).json({ error: "Monitor not found" });
-    response.status(204).end();
-  } catch (error) { next(error); }
-});
+app.delete(
+  "/api/monitors/:id",
+  requireAuth,
+  async (request, response, next) => {
+    try {
+      const result = await pool.query(
+        "DELETE FROM monitors WHERE id = $1 AND user_id = $2 RETURNING id",
+        [request.params.id, request.userId],
+      );
+      if (!result.rowCount)
+        return response.status(404).json({ error: "Monitor not found" });
+      response.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
-app.get("/api/monitors/:id/checks", requireAuth, async (request, response, next) => {
-  try {
-    const result = await pool.query(
-      `SELECT c.* FROM checks c JOIN monitors m ON m.id = c.monitor_id WHERE c.monitor_id = $1 AND m.user_id = $2 ORDER BY c.checked_at DESC LIMIT 100`,
-      [request.params.id, request.userId],
-    );
-    response.json(result.rows);
-  } catch (error) { next(error); }
-});
+app.get(
+  "/api/monitors/:id/checks",
+  requireAuth,
+  async (request, response, next) => {
+    try {
+      const { page, limit } = paginationInput.parse(request.query);
+      const offset = (page - 1) * limit;
+      const values = [request.params.id, request.userId, limit, offset];
+      const [result, count] = await Promise.all([
+        pool.query(
+          `SELECT c.* FROM checks c
+         JOIN monitors m ON m.id = c.monitor_id
+         WHERE c.monitor_id = $1 AND m.user_id = $2
+         ORDER BY c.checked_at DESC LIMIT $3 OFFSET $4`,
+          values,
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS total FROM checks c
+         JOIN monitors m ON m.id = c.monitor_id
+         WHERE c.monitor_id = $1 AND m.user_id = $2`,
+          values.slice(0, 2),
+        ),
+      ]);
+      response.json({
+        data: result.rows,
+        pagination: pagination(page, limit, count.rows[0].total),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 app.get("/api/incidents", requireAuth, async (request, response, next) => {
   try {
-    const result = await pool.query(
-      `SELECT i.*, m.name AS monitor_name FROM incidents i JOIN monitors m ON m.id = i.monitor_id WHERE m.user_id = $1 ORDER BY i.opened_at DESC LIMIT 100`,
-      [request.userId],
-    );
-    response.json(result.rows);
-  } catch (error) { next(error); }
+    const { page, limit, status } = incidentQuery.parse(request.query);
+    const offset = (page - 1) * limit;
+    const values = [request.userId, status, limit, offset];
+    const [result, count] = await Promise.all([
+      pool.query(
+        `SELECT i.*, m.name AS monitor_name
+         FROM incidents i JOIN monitors m ON m.id = i.monitor_id
+         WHERE m.user_id = $1
+           AND ($2 = 'all' OR ($2 = 'open' AND i.recovered_at IS NULL) OR ($2 = 'recovered' AND i.recovered_at IS NOT NULL))
+         ORDER BY i.opened_at DESC LIMIT $3 OFFSET $4`,
+        values,
+      ),
+      pool.query(
+        `SELECT COUNT(*)::int AS total
+         FROM incidents i JOIN monitors m ON m.id = i.monitor_id
+         WHERE m.user_id = $1
+           AND ($2 = 'all' OR ($2 = 'open' AND i.recovered_at IS NULL) OR ($2 = 'recovered' AND i.recovered_at IS NOT NULL))`,
+        values.slice(0, 2),
+      ),
+    ]);
+    response.json({
+      data: result.rows,
+      pagination: pagination(page, limit, count.rows[0].total),
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use(errorHandler);

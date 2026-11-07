@@ -91,6 +91,9 @@ curl -X POST http://localhost:3001/api/monitors \
   -H "Authorization: Bearer YOUR_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"name":"Example API","url":"https://example.com","expectedStatus":200}'
+
+curl "http://localhost:3001/api/monitors?page=1&limit=20&status=up" \
+  -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
 ## API
@@ -104,6 +107,8 @@ The initial contract is documented in [`openapi.yaml`](./openapi.yaml). Implemen
 - `DELETE /api/monitors/:id`
 - `GET /api/monitors/:id/checks`
 - `GET /api/incidents`
+
+List endpoints return `{ data, pagination }`. Use `page` (starting at 1) and `limit` (1-100). Monitor lists also support `search` and `status=up|down`; incident lists support `status=all|open|recovered`.
 
 Import [`openapi.yaml`](./openapi.yaml) into Swagger UI, Postman or Insomnia for the complete contract.
 
