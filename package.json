@@ -10,7 +10,7 @@
     "dev:api": "npm --workspace apps/api run dev",
     "dev:worker": "npm --workspace apps/worker run dev",
     "dev:web": "npm --workspace apps/web run dev",
-    "test": "jest",
+    "test": "node --import tsx --test tests/integration/health.test.ts tests/worker/checker.test.ts",
     "lint": "eslint .",
     "format": "prettier --write ."
   },
