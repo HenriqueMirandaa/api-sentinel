@@ -67,6 +67,14 @@ SMTP_PASSWORD=your-smtp-password
 SMTP_FROM=API Sentinel <alerts@example.com>
 ```
 
+Worker tuning is optional and bounded by the worker:
+
+```env
+CHECK_INTERVAL_MS=60000
+WORKER_BATCH_SIZE=100
+WORKER_CONCURRENCY=5
+```
+
 Apply the schema and start each process:
 
 ```bash

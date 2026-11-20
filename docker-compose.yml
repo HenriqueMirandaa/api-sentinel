@@ -32,6 +32,8 @@ services:
     environment:
       DATABASE_URL: postgresql://sentinel:sentinel@postgres:5432/api_sentinel
       CHECK_INTERVAL_MS: 60000
+      WORKER_BATCH_SIZE: 100
+      WORKER_CONCURRENCY: 5
     depends_on:
       - postgres
 
